@@ -1,0 +1,1 @@
+ /home/kavia/workspace/code-generation/qr-code-scanner-135732/qr_scanner_frontend/.dart_tool/flutter_build/2103b760c1208a84a6d1a60f1465a863/dart_build_result.json: 
