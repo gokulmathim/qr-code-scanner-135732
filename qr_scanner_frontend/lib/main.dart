@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 /// Defines the main accent and theme colors.
@@ -36,12 +36,12 @@ class MyApp extends StatelessWidget {
           primary: kPrimaryColor,
           secondary: kSecondaryColor,
           surface: Colors.white,
-          background: Colors.white,
+          // background: Colors.white, // background is deprecated after v3.18, use surface instead
           error: Colors.red,
           onPrimary: Colors.white,
           onSecondary: Colors.white,
           onSurface: Colors.black87,
-          onBackground: Colors.black87,
+          // onBackground: Colors.black87, // onBackground is deprecated, use onSurface instead
           onError: Colors.white,
           brightness: Brightness.light,
         ),
@@ -59,7 +59,7 @@ class MyApp extends StatelessWidget {
         ),
         textSelectionTheme: TextSelectionThemeData(
           cursorColor: kPrimaryColor,
-          selectionColor: kSecondaryColor.withOpacity(0.5),
+          selectionColor: kSecondaryColor.withAlpha(128), // .withOpacity deprecated, use withAlpha for 50%
           selectionHandleColor: kPrimaryColor,
         ),
         snackBarTheme: const SnackBarThemeData(
@@ -128,8 +128,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Copies text to clipboard with feedback.
-  void _copyToClipboard(String value) {
-    Clipboard.setData(ClipboardData(text: value));
+  void _copyToClipboard(String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
     _showSnackBar('Copied to clipboard!');
   }
 
@@ -157,9 +157,11 @@ class _MainScreenState extends State<MainScreen> {
     Provider.of<QrHistoryProvider>(context, listen: false).add(value);
     // Prevent scanning multiple times in row:
     Future.delayed(const Duration(seconds: 1)).then((_) {
-      setState(() {
-        _processing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _processing = false;
+        });
+      }
     });
   }
 
@@ -215,8 +217,8 @@ class _MainScreenState extends State<MainScreen> {
                   color: Colors.grey[50]!,
                   child: MobileScanner(
                     controller: _cameraController,
-                    allowDuplicates: false,
-                    onDetect: _processing ? null : _onDetect,
+                    // allowDuplicates: false, // Not supported param; MobileScanner prevents dupes by default or use detectionSpeed if needed
+                    onDetect: _onDetect,
                   ),
                 ),
               ),
@@ -267,8 +269,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Opens the history screen as a modal.
-  void _openHistory(BuildContext context, List<String> history) async {
-    await Navigator.of(context).push(
+  void _openHistory(BuildContext context, List<String> history) {
+    // No await or async; navigation is synchronous
+    Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => HistoryScreen(history: history)),
     );
   }
@@ -388,9 +391,13 @@ class _QrResultArea extends StatelessWidget {
       );
     }
 
-    final isUrl = result!.startsWith('http://') ||
-        result!.startsWith('https://') ||
-        (result!.contains('.') && !result!.contains(' '));
+    // Only call methods on result if it's non-null.
+    final bool showAsUrl = (result != null) &&
+      (
+        result!.startsWith('http://') ||
+        result.startsWith('https://') ||
+        (result.contains('.') && !result.contains(' '))
+      );
 
     return Card(
       elevation: 3,
@@ -427,7 +434,7 @@ class _QrResultArea extends StatelessWidget {
                   label: const Text("Copy", style: TextStyle(color: kAccentColor)),
                   onPressed: onCopy,
                 ),
-                if (isUrl) ...[
+                if (showAsUrl) ...[
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -496,8 +503,8 @@ class HistoryScreen extends StatelessWidget {
                         tooltip: "Copy",
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: value));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("Copied to clipboard")));
+                          final messenger = ScaffoldMessenger.of(context);
+                          messenger.showSnackBar(const SnackBar(content: Text("Copied to clipboard")));
                         },
                       ),
                       if (isUrl)
@@ -513,11 +520,12 @@ class HistoryScreen extends StatelessWidget {
                                     !value.contains(' ')))) {
                               uri = Uri.parse('https://$value');
                             }
-                            if (await canLaunchUrl(uri!)) {
+                            final messenger = ScaffoldMessenger.of(context);
+                            if (await canLaunchUrl(uri)) {
                               await launchUrl(uri,
                                   mode: LaunchMode.externalApplication);
                             } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                   const SnackBar(content: Text("Could not open")));
                             }
                           },
@@ -529,26 +537,6 @@ class HistoryScreen extends StatelessWidget {
             ),
     );
   }
-}
-
-/// Helper for clipboard in a cross-platform way.
-class Clipboard {
-  /// PUBLIC_INTERFACE
-  static Future<void> setData(ClipboardData data) async {
-    await ServicesBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
-      'flutter/platform',
-      const StandardMethodCodec().encodeMethodCall(MethodCall(
-        'Clipboard.setData',
-        <String, dynamic>{'text': data.text},
-      )),
-      (_) {},
-    );
-  }
-}
-
-class ClipboardData {
-  final String? text;
-  ClipboardData({this.text});
 }
 
 // PUBLIC_INTERFACE
